@@ -1,4 +1,5 @@
 import json
+import queue
 import requests
 
 
@@ -37,7 +38,7 @@ class Game:
         state = self.h.get_game_state()
         self.width = state["maze_size"][0]
         self.height = state["maze_size"][1]
-        self.maze = [[0] * self.width for _ in range(self.height)]
+        self.visited = dict()
         self.col = state["current_location"][0]
         self.row = state["current_location"][1]
         self.status = state["status"]
@@ -47,6 +48,7 @@ class Game:
 
     def move(self, action):
         response = self.h.post_action(action)
+        self.update()
         return response["result"]
 
 
@@ -58,47 +60,72 @@ class MazeSolver:
         pass
     
 
-    def solve_maze(self, game, result="SUCCESS"):
+    def solve_maze(self, game):
 
-        # if game.status != "PLAYING":
-        #     return
+        q = queue.Queue()
+        q.put((game.row, game.col))
+        start_row = game.row
+        start_col = game.col
 
-        if result == "END":
-            print("Maze completed")
-            return True
+        while not q.empty():
 
-        if result == "WALL" or result == "OUT_OF_BOUNDS":
-            return False
+            row, col = q.get()
+            print("currently searching from", row, col)
 
-        if game.col < 0 or game.col >= game.width or game.row < 0 or game.row >= game.height:
-            return False
-        
-        if game.maze[game.row][game.col] == 1:
-            return False
+            if row != start_row and col != start_col:
+                game.move(game.visited[(row, col)])
 
-        curr_row = game.row
-        curr_col = game.col
+            response = game.move("UP")
+            if response == "END":
+                print("Finished maze")
+                break
+            if response == "SUCCESS" and (game.row, game.col) not in game.visited:
+                print("Moving up to", game.row, game.col)
+                game.visited[(game.row, game.col)] = "UP"
+                q.put((game.row, game.col))
+            if response == "SUCCESS":
+                game.move("DOWN")
+            # else:
+            #     game.move("DOWN")
 
-        game.maze[curr_row][curr_col] = 1
+            response = game.move("DOWN")
+            if response == "END":
+                print("Finished maze")
+                break
+            if response == "SUCCESS" and (game.row, game.col) not in game.visited:
+                print("Moving down to", game.row, game.col)
+                game.visited[(game.row, game.col)] = "DOWN"
+                q.put((game.row, game.col))
+            if response == "SUCCESS":
+                game.move("UP")
+            # else:
+            #     game.move("UP")
 
-        game.row, game.col = curr_row - 1, curr_col
-        if self.solve_maze(game, game.move("UP")):
-            return True
+            response = game.move("LEFT")
+            if response == "END":
+                print("Finished maze")
+                break
+            if response == "SUCCESS" and (game.row, game.col) not in game.visited:
+                print("Moving left to", game.row, game.col)
+                game.visited[(game.row, game.col)] = "LEFT"
+                q.put((game.row, game.col))
+            if response == "SUCCESS":
+                game.move("RIGHT")
+            # else:
+            #     game.move("RIGHT")
 
-        game.row, game.col = curr_row + 1, curr_col
-        if self.solve_maze(game, game.move("DOWN")):
-            return True
-
-        game.row, game.col = curr_row, curr_col - 1
-        if self.solve_maze(game, game.move("LEFT")):
-            return True
-
-        game.row, game.col = curr_row, curr_col + 1
-        if self.solve_maze(game, game.move("RIGHT")):
-            return True
-
-        return False
-
+            response = game.move("RIGHT")
+            if response == "END":
+                print("Finished maze")
+                break
+            if response == "SUCCESS" and (game.row, game.col) not in game.visited:
+                print("Moving right to", game.row, game.col)
+                game.visited[(game.row, game.col)] = "RIGHT"
+                q.put((game.row, game.col))
+            if response == "SUCCESS":
+                game.move("LEFT")
+            # else:
+            #     game.move("LEFT")
 
 
 
@@ -108,9 +135,13 @@ def main():
     g = Game()
     ms = MazeSolver()
 
-    while g.status != "FINISHED":
-        ms.solve_maze(g)
-        g.update()
+    # while g.status != "FINISHED":
+    #     ms.solve_maze(g)
+    #     g.update()
+
+    print(g.width, g.height, g.row, g.col, g.status, g.levels_completed, g.total_levels)
+
+    ms.solve_maze(g)
 
     print(g.status)
 
