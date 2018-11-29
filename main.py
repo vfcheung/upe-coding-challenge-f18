@@ -11,137 +11,112 @@ class HttpHandler:
 
 
     def __init__(self, base_url, uid):
-        self.base_url = base_url
-        self.uid = uid
-        self.token = json.loads(requests.post(self.base_url + "/session", data={"uid": self.uid}, headers={"content-type": "application/x-www-form-urlencoded"}).text)["token"]
+        self._base_url = base_url
+        self._uid = uid
+        while True:
+            response = requests.post(self._base_url + "/session", data={"uid": self._uid}, headers={"content-type": "application/x-www-form-urlencoded"})
+            if response.status_code == requests.codes["OK"]:
+                break
+        self._token = json.loads(response.text)["token"]
 
 
     def get_game_state(self):
-        state = json.loads(requests.get(self.base_url + "/game?token=" + self.token).text)
-        return state
+        while True:
+            response = requests.get(self._base_url + "/game?token=" + self._token)
+            if response.status_code == requests.codes["OK"]:
+                break
+        return json.loads(response.text)
 
-    
+
     def post_action(self, action):
-        payload = {"action": action}
-        response = json.loads(requests.post(self.base_url + "/game?token=" + self.token, data=payload).text)
-        return response
+        while True:
+            response = requests.post(self._base_url + "/game?token=" + self._token, data={"action": action})
+            if response.status_code == requests.codes["OK"]:
+                break
+        return json.loads(response.text)["result"]
 
 
 class Game:
 
+
     def __init__(self):
         self.h = HttpHandler(BASE_URL, UID)
-        self.update()
+        self.get_next_maze()
 
 
-    def update(self):
+    def get_next_maze(self):
         state = self.h.get_game_state()
-        self.width = state["maze_size"][0]
-        self.height = state["maze_size"][1]
-        self.visited = dict()
-        self.col = state["current_location"][0]
-        self.row = state["current_location"][1]
+        dimensions = state["maze_size"]
+        if dimensions != None:
+            self.width, self.height = dimensions
+        start_position = state["current_location"]
+        if start_position != None:
+            self.col, self.row = start_position
         self.status = state["status"]
         self.levels_completed = state["levels_completed"]
         self.total_levels = state["total_levels"]
+        
 
 
     def move(self, action):
-        response = self.h.post_action(action)
-        self.update()
-        return response["result"]
-
+        result = self.h.post_action(action)
+        if result == "SUCCESS":
+            if action == "UP":
+                self.row -= 1
+            elif action =="DOWN":
+                self.row += 1
+            elif action == "LEFT":
+                self.col -= 1
+            elif action == "RIGHT":
+                self.col += 1
+        return result
 
 
 class MazeSolver:
-    
+
+    _directions = ["UP","DOWN","LEFT","RIGHT"]
+    _opposite = {"UP":"DOWN", "DOWN":"UP", "LEFT":"RIGHT", "RIGHT":"LEFT"}
 
     def __init__(self):
-        pass
-    
+        self._visited = set()
+
+    def _solve_maze_helper(self, game):
+        
+        self._visited.add((game.row, game.col))
+
+        for dir in self._directions:
+            result = game.move(dir)
+            if result == "END":
+                return True
+            if result == "SUCCESS":
+                if (game.row, game.col) not in self._visited and self._solve_maze_helper(game):
+                    return True
+                game.move(self._opposite[dir])
+
+        return False
+
 
     def solve_maze(self, game):
-
-        q = queue.Queue()
-        q.put((game.row, game.col))
-        start_row = game.row
-        start_col = game.col
-
-        while not q.empty():
-
-            row, col = q.get()
-            print("currently searching from", row, col)
-
-            if row != start_row and col != start_col:
-                game.move(game.visited[(row, col)])
-
-            response = game.move("UP")
-            if response == "END":
-                print("Finished maze")
-                break
-            if response == "SUCCESS" and (game.row, game.col) not in game.visited:
-                print("Moving up to", game.row, game.col)
-                game.visited[(game.row, game.col)] = "UP"
-                q.put((game.row, game.col))
-            if response == "SUCCESS":
-                game.move("DOWN")
-            # else:
-            #     game.move("DOWN")
-
-            response = game.move("DOWN")
-            if response == "END":
-                print("Finished maze")
-                break
-            if response == "SUCCESS" and (game.row, game.col) not in game.visited:
-                print("Moving down to", game.row, game.col)
-                game.visited[(game.row, game.col)] = "DOWN"
-                q.put((game.row, game.col))
-            if response == "SUCCESS":
-                game.move("UP")
-            # else:
-            #     game.move("UP")
-
-            response = game.move("LEFT")
-            if response == "END":
-                print("Finished maze")
-                break
-            if response == "SUCCESS" and (game.row, game.col) not in game.visited:
-                print("Moving left to", game.row, game.col)
-                game.visited[(game.row, game.col)] = "LEFT"
-                q.put((game.row, game.col))
-            if response == "SUCCESS":
-                game.move("RIGHT")
-            # else:
-            #     game.move("RIGHT")
-
-            response = game.move("RIGHT")
-            if response == "END":
-                print("Finished maze")
-                break
-            if response == "SUCCESS" and (game.row, game.col) not in game.visited:
-                print("Moving right to", game.row, game.col)
-                game.visited[(game.row, game.col)] = "RIGHT"
-                q.put((game.row, game.col))
-            if response == "SUCCESS":
-                game.move("LEFT")
-            # else:
-            #     game.move("LEFT")
+        print("Solving maze {0} of {1} with size {2} x {3} ...".format(game.levels_completed + 1, game.total_levels, game.height, game.width))
+        if self._solve_maze_helper(game):
+            print("Maze {0} completed".format(game.levels_completed + 1))
+            self._reset()
+        else:
+            print("Could not solve maze")
 
 
+    def _reset(self):
+        self._visited = set()
 
-    
 
 def main():
+
     g = Game()
     ms = MazeSolver()
 
-    # while g.status != "FINISHED":
-    #     ms.solve_maze(g)
-    #     g.update()
-
-    print(g.width, g.height, g.row, g.col, g.status, g.levels_completed, g.total_levels)
-
-    ms.solve_maze(g)
+    while g.status != "FINISHED" and g.status != None:
+        ms.solve_maze(g)
+        g.get_next_maze()
 
     print(g.status)
 
